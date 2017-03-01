@@ -1,7 +1,7 @@
 import numpy as np
 import operator as op
 
-racetrack = np.array((
+RACETRACK = np.array((
         ['X', 'X', 'X', 's', 's', 's', 's', 's', 's', 'X', 'X', 'X', 'X', 'X', 'X', 'X', 'X'],
         ['X', 'X', 'X', '_', '_', '_', '_', '_', '_', 'X', 'X', 'X', 'X', 'X', 'X', 'X', 'X'],
         ['X', 'X', 'X', '_', '_', '_', '_', '_', '_', 'X', 'X', 'X', 'X', 'X', 'X', 'X', 'X'],
@@ -33,35 +33,63 @@ racetrack = np.array((
         ['X', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', 'f'],
         ['X', 'X', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', 'f'],
         ['X', 'X', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', 'f'],
-        ['X', 'X', 'X', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', 'f'],
-
-))
-h_actions = [1, -1, 0]
-v_actions = [1, -1, 0]
+        ['X', 'X', 'X', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', '_', 'f']))
+H_ACTIONS = [1, -1, 0]
+V_ACTIONS = [1, -1, 0]
 VELOCITY_THRESHOLD = 5
 
 
 def init_policies():
-    rows, cols = racetrack.shape
+    rows, cols = RACETRACK.shape
     target_policy = {}
     behavior_policy = {}
-    h_t_velocity = h_actions[2]
-    h_b_velocity = h_actions[0]
-    v_t_velocity = v_actions[0]
-    v_b_velocity = v_actions[0]
-    h_zero = h_actions[2]
-    v_zero = v_actions[2]
+    h_t_velocity = H_ACTIONS[2]
+    h_b_velocity = H_ACTIONS[0]
+    v_t_velocity = V_ACTIONS[0]
+    v_b_velocity = V_ACTIONS[0]
+    h_zero = H_ACTIONS[2]
+    v_zero = V_ACTIONS[2]
 
     for row in range(rows):
         for col in range(cols):
-            target_policy[row, col] = [h_t_velocity, v_t_velocity] if (row != rows - 1) else [h_zero, v_zero]
-            behavior_policy[row, col] = [h_b_velocity, v_b_velocity] if (row != rows - 1) else [h_zero, v_zero]
+            target_policy[row, col] = (h_t_velocity, v_t_velocity) if (row != 0) else (h_zero, v_zero)
+            behavior_policy[row, col] = (h_b_velocity, v_b_velocity) if (row != 0) else (h_zero, v_zero)
 
     return target_policy, behavior_policy
 
 
+def init_q_state_action_values():
+    Q = {}
+    rows, cols = RACETRACK.shape
+
+    for row in range(rows):
+        for col in range(cols):
+            Q[row, col] = {}
+
+            for v_action in V_ACTIONS:
+                for h_action in H_ACTIONS:
+                    Q[row, col][v_action, h_action] = 0
+
+    return Q
+
+
+def init_cumulative_weights():
+    C = {}
+    rows, cols = RACETRACK.shape
+
+    for row in range(rows):
+        for col in range(cols):
+            C[row, col] = {}
+
+            for v_action in V_ACTIONS:
+                for h_action in H_ACTIONS:
+                    C[row, col][v_action, h_action] = 0
+
+    return C
+
+
 def get_random_start_pos():
-    start_loc = np.where(racetrack == 's')
+    start_loc = np.where(RACETRACK == 's')
     start_col = start_loc[1][0]
     end_col = start_loc[1][len(start_loc[1]) - 1]
     state = (0, np.random.randint(start_col, end_col + 1))
@@ -73,45 +101,71 @@ def do_incremental_off_policy_every_visit_monte_carlo_evaluation():
     target_policy, behavior_policy = init_policies()
     Q = init_q_state_action_values()
     C = init_cumulative_weights()
+    behavior_policy_action_prob = 0.33
+    gamma = 1.0
+    runs = 1000
+    current_run = 0
 
-    while True:
-        episode = generate_behavior_policy_episode(behavior_policy)
+    while current_run < runs:
+        episode = generate_behavior_policy_episode()
+        G = 0.0
+        W = 1.0
+
+        for e in reversed(episode):
+            state = (e[0][0], e[0][1])
+            action = e[1]
+            reward = e[2]
+            G += (gamma * G + reward)
+            C[state][action] += W
+            Q[state][action] += (W / C[state][action]) * (G - Q[state][action])
+            target_policy[state] = get_max_action_in_state(Q, state)
+
+            if target_policy[state] != action:
+                break
+
+            W *= 1.0 / behavior_policy_action_prob
+
+        current_run += 1
 
 
-def init_q_state_action_values():
-    Q = {}
-    rows, cols = racetrack.shape
+def get_max_action_in_state(Q, state):
+    best_action = None
+    current_best_value = -999999
 
-    for row in range(rows):
-        for col in range(cols):
-            Q[row, col] = 0
+    for action in Q[state]:
+        if Q[state][action] > current_best_value:
+            current_best_value = Q[state][action]
+            best_action = action
 
-    return Q
-
-
-def init_cumulative_weights():
-    C = {}
-    rows, cols = racetrack.shape
-
-    for row in range(rows):
-        for col in range(cols):
-            C[row, col] = 0
-
-    return C
+    return best_action
 
 
-def generate_behavior_policy_episode(behavior_policy):
+def has_finished(state):
+    first_finish_row = 26
+    last_finish_row = 31
+    finish_col = 16
+
+    if first_finish_row <= state[0] <= last_finish_row and state[1] >= finish_col:
+        return True
+
+    return False
+
+
+def has_collided(state):
+    return RACETRACK[state[0], state[1]] == 'X'
+
+
+def generate_behavior_policy_episode():
     episode = []
-    current_racetrack = racetrack
     reward = -1
     state = get_random_start_pos()
-    max_row, max_col = racetrack.shape
+    max_row, max_col = RACETRACK.shape
     h_velocity = 0
     v_velocity = 0
 
     while True:
-        random_h = np.random.choice(h_actions)
-        random_v = np.random.choice(v_actions)
+        random_h = np.random.choice(H_ACTIONS)
+        random_v = np.random.choice(V_ACTIONS)
         h_velocity += random_h
         v_velocity += random_v
 
@@ -127,20 +181,19 @@ def generate_behavior_policy_episode(behavior_policy):
         if v_velocity >= VELOCITY_THRESHOLD:
             v_velocity -= 1
 
-        if has_finished(state):
+        action = [v_velocity, h_velocity]
+        new_state = np.add(state, action)
+
+        if has_finished(new_state):
             break
 
         is_within_bounds = (state[0] + v_velocity < max_row and state[1] + h_velocity < max_col) and \
                            (state[0] + v_velocity >= 0 and state[1] + h_velocity >= 0)
 
         if not is_within_bounds:
-            h_velocity -= random_h
-            v_velocity -= random_v
+            state = get_random_start_pos()
 
             continue
-
-        action = [v_velocity, h_velocity]
-        new_state = np.add(state, action)
 
         if has_collided(new_state):
             state = get_random_start_pos()
@@ -149,9 +202,7 @@ def generate_behavior_policy_episode(behavior_policy):
 
             continue
 
-        episode.append((state, action, reward))
-
-        #print_current_racetrack(new_state, current_racetrack)
+        episode.append((state, (random_v, random_h), reward))
 
         state = new_state
 
@@ -172,30 +223,6 @@ def all_are_less_than_velocity_threshold(state_values):
             return False
         
     return True
-
-
-def print_current_racetrack(state, current_racetrack):
-    start_row = 0
-
-    if state[0] != start_row:
-        current_racetrack[state[0], state[1]] = 'O'
-
-    print(current_racetrack)
-
-
-def has_finished(state):
-    first_finish_row = 26
-    last_finish_row = 31
-    finish_line = 16
-
-    if first_finish_row <= state[0] <= last_finish_row and state[1] >= finish_line:
-        return True
-
-    return False
-
-
-def has_collided(state):
-    return racetrack[state[0], state[1]] == 'X'
 
 
 do_incremental_off_policy_every_visit_monte_carlo_evaluation()
