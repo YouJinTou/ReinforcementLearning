@@ -103,10 +103,12 @@ def do_incremental_off_policy_every_visit_monte_carlo_evaluation():
     C = init_cumulative_weights()
     behavior_policy_action_prob = 0.33
     gamma = 1.0
-    runs = 1000
+    runs = 10000
     current_run = 0
 
     while current_run < runs:
+        print("Run: " + str(current_run + 1))
+
         episode = generate_behavior_policy_episode()
         G = 0.0
         W = 1.0
@@ -126,6 +128,8 @@ def do_incremental_off_policy_every_visit_monte_carlo_evaluation():
             W *= 1.0 / behavior_policy_action_prob
 
         current_run += 1
+
+    return Q, target_policy
 
 
 def get_max_action_in_state(Q, state):
@@ -181,8 +185,8 @@ def generate_behavior_policy_episode():
         if v_velocity >= VELOCITY_THRESHOLD:
             v_velocity -= 1
 
-        action = [v_velocity, h_velocity]
-        new_state = np.add(state, action)
+        action = (v_velocity, h_velocity)
+        new_state = tuple(np.add(state, action))
 
         if has_finished(new_state):
             break
@@ -190,12 +194,7 @@ def generate_behavior_policy_episode():
         is_within_bounds = (state[0] + v_velocity < max_row and state[1] + h_velocity < max_col) and \
                            (state[0] + v_velocity >= 0 and state[1] + h_velocity >= 0)
 
-        if not is_within_bounds:
-            state = get_random_start_pos()
-
-            continue
-
-        if has_collided(new_state):
+        if not is_within_bounds or has_collided(new_state):
             state = get_random_start_pos()
             h_velocity = 0
             v_velocity = 0
