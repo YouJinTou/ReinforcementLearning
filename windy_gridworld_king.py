@@ -20,7 +20,7 @@ ACTIONS = [
     (+1, -1),  # Down-left
     (+0, -1),  # Left
     (-1, -1),  # Up-left
-    (+0, +0)   # Stay
+    # (+0, +0)   # Stay
 ]
 EPSILON = 0.1
 ALPHA = 0.5
@@ -28,6 +28,8 @@ GAMMA = 1
 REWARD = -1
 START_STATE = (3, 0)
 TERMINAL_STATE = (3, 7)
+
+WIND_IS_STOCHASTIC = True
 
 
 def init_action_values():
@@ -67,8 +69,6 @@ def do_sarsa(episodes):
 
         episode_steps.append(current_steps)
 
-        print(current_steps)
-
     episode_steps = episode_steps[::-1]
 
     return episode_steps
@@ -83,6 +83,36 @@ def get_action(Q, state):
 
 def get_new_state(state, action):
     no_wind = WORLD[state] == '.'
+
+    if no_wind:
+        new_state = tuple(np.add(state, action))
+
+        return new_state
+
+    if WIND_IS_STOCHASTIC:
+        wind_prob = np.random.rand()
+
+        if wind_prob < 0.33:
+            new_state = get_new_state_deterministic(state, action)
+        elif wind_prob <= 0.66:
+            wind_of_one = (-1, 0)
+            new_state = tuple(np.add(get_new_state_deterministic(state, action), wind_of_one))
+        else:
+            wind_of_two = (-2, 0)
+            new_state = tuple(np.add(get_new_state_deterministic(state, action), wind_of_two))
+    else:
+        new_state = get_new_state_deterministic(state, action)
+
+    is_beyond_boundary = new_state[0] < 0
+
+    if is_beyond_boundary:
+        new_state = (0, new_state[1])
+
+    return new_state
+
+
+def get_new_state_deterministic(state, action):
+    no_wind = WORLD[state] == '.'
     wind_is_one = WORLD[state] == '_'
 
     if no_wind:
@@ -93,11 +123,6 @@ def get_new_state(state, action):
     else:
         wind_of_two = (-2, 0)
         new_state = tuple(np.add(state, np.add(action, wind_of_two)))
-
-    is_beyond_boundary = new_state[0] < 0
-
-    if is_beyond_boundary:
-        new_state = (0, new_state[1])
 
     return new_state
 
@@ -110,6 +135,5 @@ def plot_episode_steps(episode_steps):
     plt.xlabel('Time steps')
     plt.ylabel('Episodes')
     plt.show()
-
 
 plot_episode_steps(do_sarsa(170))
