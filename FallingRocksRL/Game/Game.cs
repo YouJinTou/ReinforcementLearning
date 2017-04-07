@@ -10,11 +10,11 @@ namespace FallingRocks
     {
         private const ushort Row = 18; // Where Hero is
 
-        public char icon = 'O'; // Using (O) is a pain as it's 3 characters long   
+        public char icon = 'O';
         public int score = 0;
         private int x = 15;
         Thread moveDwarfThread;
-        
+
         public Dwarf()
         {
             Console.SetCursorPosition(x, Row);
@@ -81,8 +81,8 @@ namespace FallingRocks
                 Console.Write(" ");
                 if (x == 1)
                 {
-                    Console.SetCursorPosition(x, Row); // We are at the edge and can't                    
-                }                                      // move any farther
+                    Console.SetCursorPosition(x, Row);
+                }
                 else
                 {
                     x--;
@@ -90,10 +90,10 @@ namespace FallingRocks
                 Console.SetCursorPosition(x, Row);
                 Console.Write(icon);
             }
-            else if (action == 2)  // There's a weird glitch when Hero
-            {                                               // gets close to the right side,
-                if (x == Console.BufferWidth - 3)           // so I had to prevent him from going
-                {                                           // there in the first place
+            else if (action == 2)
+            {
+                if (x == Console.BufferWidth - 3)
+                {
                     Console.SetCursorPosition(x - 2, Row);
                 }
                 else
@@ -114,7 +114,7 @@ namespace FallingRocks
             return Math.Abs(score);
         }
     }
-    
+
     [Serializable]
     public class Rock
     {
@@ -127,6 +127,7 @@ namespace FallingRocks
         public Random rockCount = new Random();
         public Random chooseType = new Random();
         public Random initialX = new Random();
+
         public Rock()
         {
             x = initialX.Next(1, 28);
@@ -134,63 +135,72 @@ namespace FallingRocks
             type = rockType[chooseType.Next(0, 12)];
             Console.SetCursorPosition(x, y);
         }
+
         public List<Rock> InitializeRow()
         {
             List<Rock> rocks = new List<Rock>();
             int count = rockCount.Next(1, 5);
+
             for (int i = 0; i < count; i++)
             {
                 rocks.Add(new Rock());
-                Thread.Sleep(10); // Remove to make the game easy
+                Thread.Sleep(10);
             }
+
             return rocks;
         }
-        // We have logic checking if the game is over in this 
-        // method as well
+        
         public bool ReignChaos(int heroPosition)
         {
             bool gameOver = false;
+
             allRows.Add(InitializeRow());
+
             if (allRows.Count > 21)
             {
-                allRows.RemoveAt(0); // We don't need to keep rocks that have gone past the screen
+                allRows.RemoveAt(0);
             }
+
             foreach (List<Rock> row in allRows)
             {
                 foreach (Rock rock in row)
                 {
-                    gameOver = CheckGameState(rock, heroPosition);
+                    gameOver = GameIsOver(rock, heroPosition);
 
-                    if (rock.y != 0) // Avoid out of buffer-size bounds
+                    if (rock.y != 0) 
                     {
                         Console.SetCursorPosition(rock.x, rock.y - 1);
                         Console.Write(" ");
                     }
+
                     if (rock.y == Console.BufferHeight)
                     {
                         Console.SetCursorPosition(rock.x, 0);
                     }
-                    else // The default statement to draw rocks
+                    else
                     {
                         Console.SetCursorPosition(rock.x, rock.y);
                         Console.Write(rock.type);
                         rock.y++;
                     }
+
                     if (gameOver)
                     {
                         Console.SetCursorPosition(rock.x, rock.y - 1);
                         Console.Write("X");
+
                         return gameOver;
                     }
                 }
             }
+
             return gameOver;
         }
 
         public List<List<Rock>> GetNextState()
         {
             var simulatedRows = new List<List<Rock>>(MakeDeepCopy(allRows));
-            
+
             foreach (List<Rock> row in simulatedRows)
             {
                 foreach (Rock rock in row)
@@ -225,15 +235,9 @@ namespace FallingRocks
             return features;
         }
 
-        public static bool CheckGameState(Rock rock, int heroPosition)
+        public static bool GameIsOver(Rock rock, int heroPosition)
         {
-            bool gameOver = false;
-            if (rock.y == 18                // Collision where Hero is
-                && rock.x == heroPosition)
-            {
-                gameOver = true;
-            }
-            return gameOver;
+            return (rock.y == 18 && rock.x == heroPosition);
         }
 
         internal static T MakeDeepCopy<T>(T obj)
@@ -264,11 +268,11 @@ namespace FallingRocks
             Console.CursorVisible = false;
         }
     }
-    
+
     class GameInitialization
     {
         static void Main()
-        {           
+        {
             Agent agent = new Agent(28, 18);
             int episodes = 10000;
             int currentEpisode = 0;
@@ -279,30 +283,36 @@ namespace FallingRocks
                 Dwarf hero = new Dwarf();
                 Rock rock = new Rock();
 
-                while (true)
+                while (true) // Episodic semi-gradient SARSA for control, chapter 10
                 {
                     double[] features = rock.GetStateFeatures(hero.X);
+                    double[] gradient = features;
                     agent.SimulatedNextState = rock.GetNextState();
-                    int action = agent.GetAction(hero.X, features);
+                    int action = agent.GetAction(hero.X, features); 
 
-                    hero.MoveWithAgent(action);
-                    
-                    if (rock.ReignChaos(hero.X))
+                    hero.MoveWithAgent(action); // Take A
+
+                    if (rock.ReignChaos(hero.X)) // Observe R, S'
                     {
                         hero.Dead = true;
 
-                        agent.UpdateWeights(0, rock.GetStateFeatures(hero.X), features);
+                        agent.UpdateWeights(0, null, gradient); // Update weights when terminal
 
                         break;
                     }
 
-                    agent.UpdateWeights(1, rock.GetStateFeatures(hero.X), features);
+                    int bestAction = agent.GetAction(hero.X, rock.GetStateFeatures(hero.X), true); // Choose A'
+                    int newHeroPos = (bestAction == 0) ? hero.X - 1 : (bestAction == 1) ? hero.X : hero.X + 1; 
+                    double[] newStateFeatures = rock.GetStateFeatures(newHeroPos); // Get the new state features given A' and S'
+
+                    agent.UpdateWeights(1, newStateFeatures, gradient); // Update weights given A' and S' // DIVERGES, but is the correct way to implement
+                    //agent.UpdateWeights(1, rock.GetStateFeatures(hero.X), gradient); // Update weights given A' and S' // DOES NOT DIVERGE, but is the incorrect way
 
                     //Thread.Sleep(150);
                 }
 
                 currentEpisode++;
-            }           
+            }
         }
     }
 }

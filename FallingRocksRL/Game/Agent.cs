@@ -21,7 +21,7 @@
 
         public List<List<Rock>> SimulatedNextState { get; set; }
 
-        public int GetAction(int y, double[] phi)
+        public int GetAction(int heroPos, double[] phi, bool isLookAhead = false)
         {
             //double epsilon = 0.1;
             //Random rand = new Random();
@@ -31,10 +31,10 @@
             //    return rand.Next(0, 3);
             //}
 
-            int left = (y - 1) >= 0 ? y - 1 : y;
-            int doNothing = y;
-            int right = (y + 1) < fieldWidth ? y + 1 : y;
-            this.oldActionValue = this.GetActionValue(phi);
+            int left = (heroPos - 1) >= 0 ? heroPos - 1 : heroPos;
+            int doNothing = heroPos;
+            int right = (heroPos + 1) < fieldWidth ? heroPos + 1 : heroPos;
+            this.oldActionValue = isLookAhead ? this.oldActionValue : this.GetActionValue(phi);
             double[] actionValues = new double[]
             {
                 GetActionValue(this.GetNextStateFeatures(left)),
@@ -47,7 +47,7 @@
             return action;
         }
 
-        public double[] GetNextStateFeatures(int heroX)
+        public double[] GetNextStateFeatures(int heroPos)
         {
             double[] features = new double[28 * 18];
 
@@ -62,7 +62,7 @@
                         continue;
                     }
 
-                    double feature = ((double)(rock.y - 18) / (rock.x * heroX));
+                    double feature = ((double)(rock.y - 18) / (rock.x * heroPos));
                     features[rock.y * 28 + rock.x] = feature;
                 }
             }
@@ -72,24 +72,27 @@
 
         public void UpdateWeights(int reward, double[] newPhi, double[] gradient)
         {
-            double newActionValue = this.GetActionValue(newPhi);
+            bool isTerminal = (reward == 0);
+            double error = isTerminal ? 
+                (reward - this.oldActionValue) : 
+                (reward + gamma * this.GetActionValue(newPhi) - this.oldActionValue);
 
             for (int i = 0; i < this.theta.Length; i++)
             {
-                this.theta[i] += alpha * (reward + gamma * newActionValue - this.oldActionValue) * gradient[i];
+                this.theta[i] += alpha * error * gradient[i];
             }
         }
 
         private double GetActionValue(double[] phi)
         {
-            double stateValue = 0;
+            double actionValue = 0;
 
             for (int i = 0; i < phi.Length; i++)
             {
-                stateValue += phi[i] * theta[i];
+                actionValue += phi[i] * theta[i];
             }
 
-            return stateValue;
+            return actionValue;
         }
     }
 }
